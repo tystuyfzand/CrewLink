@@ -1,5 +1,4 @@
 import React, { useContext, useEffect, useMemo, useRef, useState } from 'react';
-import io, { Socket } from 'socket.io-client';
 import Avatar from './Avatar';
 import { GameStateContext, SettingsContext } from './contexts';
 import { AmongUsState, GameState, Player } from '../common/AmongUsState';
@@ -7,6 +6,7 @@ import Peer from 'simple-peer';
 import { ipcRenderer, remote } from 'electron';
 import VAD from './vad';
 import { ISettings } from '../common/ISettings';
+import Socket, { Events } from './socket';
 
 export interface ExtendedAudioElement extends HTMLAudioElement {
 	setSinkId: (sinkId: string) => Promise<void>;
@@ -29,7 +29,7 @@ interface SocketIdMap {
 }
 
 interface ConnectionStuff {
-	socket: typeof Socket;
+	socket: Socket;
 	stream?: MediaStream;
 	pushToTalk: boolean;
 	deafened: boolean;
@@ -139,11 +139,18 @@ const Voice: React.FC = function () {
 	// BIG ASS BLOB - Handle audio
 	useEffect(() => {
 		// Connect to voice relay server
-		connectionStuff.current.socket = io(settings.serverURL, { transports: ['websocket'] });
-		const { socket } = connectionStuff.current;
+		let socket = connectionStuff.current.socket = new Socket(settings.serverURL);
 
 		socket.on('connect', () => {
+			socket.send(Events.Authentication, { version: '1.1.6' });
+		});
+		socket.on('authenticate', () => {
 			setConnected(true);
+
+			// If we have a player id and lobby, re-send it
+			if (gameState.lobbyCode && myPlayer?.id !== undefined) {
+				socket.send(Events.ID, [ myPlayer.id ]);
+			}
 		});
 		socket.on('disconnect', () => {
 			setConnected(false);
@@ -206,7 +213,7 @@ const Voice: React.FC = function () {
 
 			const connect = (lobbyCode: string, playerId: number) => {
 				console.log('Connect called', lobbyCode, playerId);
-				socket.emit('leave');
+				socket.send(Events.Leave);
 				Object.keys(peerConnections).forEach(k => {
 					disconnectPeer(k);
 				});
@@ -229,7 +236,7 @@ const Voice: React.FC = function () {
 					}
 				}
 
-				socket.emit('join', lobbyCode, playerId);
+				socket.send(Events.Join, [ lobbyCode, playerId ]);
 			};
 			setConnect({ connect });
 			function createPeerConnection(peer: string, initiator: boolean) {
@@ -238,6 +245,11 @@ const Voice: React.FC = function () {
 						iceServers: [
 							{
 								'urls': 'stun:stun.l.google.com:19302'
+							},
+							{
+								'urls': 'turn:turn.crewmate.link:3478',
+								'username': 'crewlink',
+								'credential': '4e27411027ee22d3eb8939f3a40043c3733930c5fd6cf0b65144c2fb54e18cd9'
 							}
 						]
 					}
@@ -282,10 +294,7 @@ const Voice: React.FC = function () {
 					audioElements.current[peer] = { element: audio, gain, pan };
 				});
 				connection.on('signal', (data) => {
-					socket.emit('signal', {
-						data,
-						to: peer
-					});
+					socket.send(Events.Signal, [ peer, data ]);
 				});
 				return connection;
 			}
@@ -293,7 +302,7 @@ const Voice: React.FC = function () {
 				createPeerConnection(peer, true);
 				setSocketPlayerIds(old => ({ ...old, [peer]: playerId }));
 			});
-			socket.on('signal', ({ data, from }: { data: Peer.SignalData, from: string }) => {
+			socket.on('signal', (from: string, data: Peer.SignalData) => {
 				let connection: Peer.Instance;
 				if (peerConnections[from]) {
 					connection = peerConnections[from];
@@ -370,7 +379,7 @@ const Voice: React.FC = function () {
 	// Emit player id to socket
 	useEffect(() => {
 		if (connectionStuff.current.socket && myPlayer && myPlayer.id !== undefined) {
-			connectionStuff.current.socket.emit('id', myPlayer.id);
+			connectionStuff.current.socket.send(Events.ID, [ myPlayer.id ]);
 		}
 	}, [myPlayer?.id]);
 
