@@ -5,9 +5,9 @@ export enum Events {
     Authentication,
     Join,
     Leave,
-    ID,
-    Signal,
-    SetIDs
+    SetClient,
+    SetClients,
+    Signal
 }
 
 export default class Socket extends EventEmitter {
@@ -73,16 +73,16 @@ export default class Socket extends EventEmitter {
             case Events.Leave:
                 this.emit('leave');
                 break;
-            case Events.ID:
+            case Events.SetClient:
                 // setId {id,playerId}
-                this.emit('setId', data[0], data[1]);
+                this.emit('setClient', data[0], data[1]);
                 break;
             case Events.Signal:
                 // signal {from,data}
                 this.emit('signal', data[0], data[1]);
                 break;
-            case Events.SetIDs:
-                // setIds {snowflake:id,...}
+            case Events.SetClients:
+                // setIds {snowflake:Client,...}
                 this.emit('setIds', data);
                 break;
         }

@@ -39,7 +39,7 @@ interface SocketClientMap {
 }
 
 interface ConnectionStuff {
-	socket: Socket;
+	socket?: Socket;
 	stream?: MediaStream;
 	pushToTalk: boolean;
 	deafened: boolean;
@@ -300,7 +300,7 @@ const Voice: React.FC<VoiceProps> = function ({ error }: VoiceProps) {
 
 			// If we have a player id and lobby, re-send it
 			if (gameState.lobbyCode && myPlayer?.id !== undefined) {
-				socket.send(Events.ID, [ myPlayer.id ]);
+				socket.send(Events.SetClient, [ myPlayer.id, gameState.clientId ]);
 			}
 		});
 		socket.on('disconnect', () => {
@@ -375,7 +375,7 @@ const Voice: React.FC<VoiceProps> = function ({ error }: VoiceProps) {
 					clientId: number
 				) => {
 					console.log('Connect called', lobbyCode, playerId, clientId);
-					socket.emit('leave');
+					socket.send(Events.Leave);
 					if (lobbyCode === 'MENU') {
 						Object.keys(peerConnections).forEach((k) => {
 							disconnectPeer(k);
@@ -383,7 +383,7 @@ const Voice: React.FC<VoiceProps> = function ({ error }: VoiceProps) {
 						setSocketClients({});
 						currentLobby = lobbyCode;
 					} else if (currentLobby !== lobbyCode) {
-						socket.emit('join', lobbyCode, playerId, clientId);
+						socket.send(Events.Join, [ lobbyCode, playerId, clientId ]);
 						currentLobby = lobbyCode;
 					}
 				};
@@ -455,10 +455,7 @@ const Voice: React.FC<VoiceProps> = function ({ error }: VoiceProps) {
 						audioElements.current[peer] = { element: audio, gain, pan };
 					});
 					connection.on('signal', (data) => {
-						socket.emit('signal', {
-							data,
-							to: peer,
-						});
+						socket.send(Events.Signal, [ peer, data ]);
 					});
 					connection.on('data', (data) => {
 						if (gameState.hostId !== socketClientsRef.current[peer].clientId)
@@ -491,7 +488,7 @@ const Voice: React.FC<VoiceProps> = function ({ error }: VoiceProps) {
 				});
 				socket.on(
 					'signal',
-					({ data, from }: { data: Peer.SignalData; from: string }) => {
+					(from: string, data: Peer.SignalData) => {
 						let connection: Peer.Instance;
 						if (peerConnections[from]) {
 							connection = peerConnections[from];
@@ -518,7 +515,7 @@ const Voice: React.FC<VoiceProps> = function ({ error }: VoiceProps) {
 		);
 
 		return () => {
-			socket.emit('leave');
+			socket.send(Events.Leave);
 			Object.keys(peerConnections).forEach((k) => {
 				disconnectPeer(k);
 			});
@@ -593,7 +590,7 @@ const Voice: React.FC<VoiceProps> = function ({ error }: VoiceProps) {
 		}
 		else if (gameState.oldGameState !== GameState.UNKNOWN && gameState.oldGameState !== GameState.MENU && gameState.gameState === GameState.MENU) {
 			// On change from a game to menu, exit from the current game properly
-			connectionStuff.current.socket?.emit('leave');
+			connectionStuff.current.socket?.send(Events.Leave);
 			Object.keys(peerConnections).forEach((k) => {
 				disconnectPeer(k);
 			});
@@ -618,10 +615,9 @@ const Voice: React.FC<VoiceProps> = function ({ error }: VoiceProps) {
 			myPlayer &&
 			myPlayer.id !== undefined
 		) {
-			connectionStuff.current.socket.emit(
-				'id',
-				myPlayer.id,
-				gameState.clientId
+			connectionStuff.current.socket.send(
+				Events.SetClient,
+				[ myPlayer.id, gameState.clientId ]
 			);
 		}
 	}, [myPlayer?.id]);
