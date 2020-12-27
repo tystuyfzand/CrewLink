@@ -1,5 +1,11 @@
 import Store from 'electron-store';
-import React, { ReactChild, useContext, useEffect, useReducer, useState } from 'react';
+import React, {
+	ReactChild,
+	useContext,
+	useEffect,
+	useReducer,
+	useState,
+} from 'react';
 import {
 	SettingsContext,
 	LobbySettingsContext,
@@ -25,8 +31,12 @@ import IconButton from '@material-ui/core/IconButton';
 import Alert from '@material-ui/lab/Alert';
 import Slider from '@material-ui/core/Slider';
 import Tooltip from '@material-ui/core/Tooltip';
+import Dialog from '@material-ui/core/Dialog';
+import DialogTitle from '@material-ui/core/DialogTitle';
+import DialogContent from '@material-ui/core/DialogContent';
+import DialogActions from '@material-ui/core/DialogActions';
 import { GameState } from '../../common/AmongUsState';
-// import '../css/settings.css';
+import Button from '@material-ui/core/Button';
 
 interface StyleInput {
 	open: boolean;
@@ -89,6 +99,15 @@ const useStyles = makeStyles((theme) => ({
 		bottom: theme.spacing(1),
 		zIndex: 10,
 	},
+	urlDialog: {
+		display: 'flex',
+		flexDirection: 'column',
+		alignItems: 'center',
+		justifyContent: 'start',
+		'&>*': {
+			marginBottom: theme.spacing(1),
+		},
+	},
 }));
 
 const keys = new Set([
@@ -146,6 +165,9 @@ const store = new Store<ISettings>({
 			store.delete('stereoInLobby');
 		},
 		'1.2.0': (store) => {
+			if (store.get('serverURL') !== 'https://crewl.ink') {
+				store.set('serverURL', 'https://crewl.ink');
+			}
 			// @ts-ignore
 			store.delete('offsets');
 		},
@@ -199,6 +221,9 @@ const store = new Store<ISettings>({
 					type: 'number',
 					default: 5.32,
 				},
+			},
+			default: {
+				maxDistance: 5.32,
 			},
 		},
 	},
@@ -256,53 +281,112 @@ interface MediaDevice {
 	label: string;
 }
 
+function validateServerUrl(uri: string): boolean {
+	try {
+		if (!isHttpUri(uri) && !isHttpsUri(uri)) return false;
+		const url = new URL(uri);
+		if (url.hostname === 'discord.gg') return false;
+		if (url.pathname !== '/') return false;
+		return true;
+	} catch (_) {
+		return false;
+	}
+}
+
 type URLInputProps = {
 	initialURL: string;
 	onValidURL: (url: string) => void;
+	className: string;
 };
-
-function validateServerUrl(uri: string): boolean {
-	if (uri.endsWith('/')) return false;
-	if (!isHttpUri(uri) && !isHttpsUri(uri)) return false;
-	const url = new URL(uri);
-	if (url.hostname === 'discord.gg') return false;
-	if (url.pathname !== '/') return false;
-	return true;
-}
 
 const URLInput: React.FC<URLInputProps> = function ({
 	initialURL,
 	onValidURL,
+	className,
 }: URLInputProps) {
 	const [isValidURL, setURLValid] = useState(true);
 	const [currentURL, setCurrentURL] = useState(initialURL);
+	const [open, setOpen] = useState(false);
 
 	useEffect(() => {
 		setCurrentURL(initialURL);
 	}, [initialURL]);
 
 	function handleChange(event: React.ChangeEvent<HTMLInputElement>) {
-		setCurrentURL(event.target.value);
-
-		if (validateServerUrl(event.target.value)) {
+		const url = event.target.value.trim();
+		setCurrentURL(url);
+		if (validateServerUrl(url)) {
 			setURLValid(true);
-			onValidURL(event.target.value);
 		} else {
 			setURLValid(false);
 		}
 	}
 
 	return (
-		<TextField
-			error={!isValidURL}
-			spellCheck={false}
-			label="Voice Server"
-			value={currentURL}
-			onChange={handleChange}
-			variant="outlined"
-			color="secondary"
-			helperText={isValidURL ? '' : 'Invalid URL'}
-		/>
+		<>
+			<Button
+				variant="contained"
+				color="secondary"
+				onClick={() => setOpen(true)}
+			>
+				Change Voice Server
+			</Button>
+			<Dialog fullScreen open={open} onClose={() => setOpen(false)}>
+				<DialogTitle>Change Voice Server</DialogTitle>
+				<DialogContent className={className}>
+					<TextField
+						fullWidth
+						error={!isValidURL}
+						spellCheck={false}
+						label="Voice Server"
+						value={currentURL}
+						onChange={handleChange}
+						variant="outlined"
+						color="primary"
+						helperText={isValidURL ? '' : 'Invalid URL'}
+					/>
+					<Alert severity="error">
+						This option is for advanced users only. Other servers can steal your
+						info or crash CrewLink.
+					</Alert>
+					<Button
+						color="primary"
+						variant="contained"
+						onClick={() => {
+							setOpen(false);
+							setURLValid(true);
+							onValidURL('https://crewl.ink');
+						}}
+					>
+						Reset to default
+					</Button>
+				</DialogContent>
+				<DialogActions>
+					<Button
+						color="primary"
+						onClick={() => {
+							setURLValid(true);
+							setOpen(false);
+							setCurrentURL(initialURL);
+						}}
+					>
+						Cancel
+					</Button>
+					<Button
+						disabled={!isValidURL}
+						color="primary"
+						onClick={() => {
+							setOpen(false);
+							let url = currentURL;
+							if (url.endsWith('/')) url = url.substring(0, url.length - 1);
+							onValidURL(url);
+						}}
+					>
+						Confirm
+					</Button>
+				</DialogActions>
+			</Dialog>
+		</>
 	);
 };
 
@@ -312,19 +396,19 @@ interface DisabledTooltipProps {
 	children: ReactChild;
 }
 
-const DisabledTooltip: React.FC<DisabledTooltipProps> = function ({ disabled, children, title }: DisabledTooltipProps) {
+const DisabledTooltip: React.FC<DisabledTooltipProps> = function ({
+	disabled,
+	children,
+	title,
+}: DisabledTooltipProps) {
 	if (disabled)
 		return (
 			<Tooltip placement="top" arrow title={title}>
 				<span>{children}</span>
 			</Tooltip>
 		);
-	else return (
-		<>
-			{children}
-		</>
-	);
-}
+	else return <>{children}</>;
+};
 
 const Settings: React.FC<SettingsProps> = function ({
 	open,
@@ -341,10 +425,9 @@ const Settings: React.FC<SettingsProps> = function ({
 			type: 'set',
 			action: store.store,
 		});
-		console.log(store.get('localLobbySettings'));
 		setLobbySettings({
 			type: 'set',
-			action: store.get('localLobbySettings')
+			action: store.get('localLobbySettings'),
 		});
 	}, []);
 
@@ -389,7 +472,7 @@ const Settings: React.FC<SettingsProps> = function ({
 		if (k === 'Control' || k === 'Alt' || k === 'Shift')
 			k = (ev.location === 1 ? 'L' : 'R') + k;
 
-		if (/^[0-9A-Z]$/.test(k) || /^F[0-9]{1,2}$/.test(k) || keys.has(k)) {
+		if (/^[0-9A-Z]$/.test(k) || /^F[0-9]{1, 2}$/.test(k) || keys.has(k)) {
 			setSettings({
 				type: 'setOne',
 				action: [shortcut, k],
@@ -414,15 +497,20 @@ const Settings: React.FC<SettingsProps> = function ({
 
 	const microphones = devices.filter((d) => d.kind === 'audioinput');
 	const speakers = devices.filter((d) => d.kind === 'audiooutput');
-	const [localDistance, setLocalDistance] = useState(settings.localLobbySettings.maxDistance);
+	const [localDistance, setLocalDistance] = useState(
+		settings.localLobbySettings.maxDistance
+	);
 	useEffect(() => {
 		setLocalDistance(settings.localLobbySettings.maxDistance);
 	}, [settings.localLobbySettings.maxDistance]);
 
-	const isInMenuOrLobby = gameState.gameState === GameState.LOBBY || gameState.gameState === GameState.MENU;
-	const canChangeLobbySettings = (gameState.gameState === GameState.MENU) || (gameState.isHost && gameState.gameState === GameState.LOBBY);
+	const isInMenuOrLobby =
+		gameState?.gameState === GameState.LOBBY ||
+		gameState?.gameState === GameState.MENU;
+	const canChangeLobbySettings =
+		gameState?.gameState === GameState.MENU ||
+		(gameState?.isHost && gameState?.gameState === GameState.LOBBY);
 
-	console.log(gameState);
 	return (
 		<Box className={classes.root}>
 			<div className={classes.header}>
@@ -445,21 +533,21 @@ const Settings: React.FC<SettingsProps> = function ({
 				<Typography variant="h6">Settings</Typography>
 			</div>
 			<div className={classes.scroll}>
-				<URLInput
-					initialURL={settings.serverURL}
-					onValidURL={(url: string) => {
-						setSettings({
-							type: 'setOne',
-							action: ['serverURL', url],
-						});
-					}}
-				/>
-				<Divider />
 				{/* Lobby Settings */}
 				<div>
 					<Typography variant="h6">Lobby Settings</Typography>
-					<Typography gutterBottom>Voice Distance: {canChangeLobbySettings ? localDistance : lobbySettings.maxDistance}</Typography>
-					<DisabledTooltip disabled={!canChangeLobbySettings} title={isInMenuOrLobby ? 'Only the game host can change this!' : 'You can only change this in the lobby!'}>
+					<Typography gutterBottom>
+						Voice Distance:{' '}
+						{canChangeLobbySettings ? localDistance : lobbySettings.maxDistance}
+					</Typography>
+					<DisabledTooltip
+						disabled={!canChangeLobbySettings}
+						title={
+							isInMenuOrLobby
+								? 'Only the game host can change this!'
+								: 'You can only change this in the lobby!'
+						}
+					>
 						<Slider
 							disabled={!canChangeLobbySettings}
 							value={
@@ -478,7 +566,7 @@ const Settings: React.FC<SettingsProps> = function ({
 									type: 'setLobbySetting',
 									action: ['maxDistance', newValue as number],
 								});
-								if (gameState.isHost) {
+								if (gameState?.isHost) {
 									setLobbySettings({
 										type: 'setOne',
 										action: ['maxDistance', newValue as number],
@@ -489,6 +577,7 @@ const Settings: React.FC<SettingsProps> = function ({
 					</DisabledTooltip>
 				</div>
 				<Divider />
+				<Typography variant="h6">Audio</Typography>
 				<TextField
 					select
 					label="Microphone"
@@ -611,6 +700,7 @@ const Settings: React.FC<SettingsProps> = function ({
 					</Grid>
 				</Grid>
 				<Divider />
+				<Typography variant="h6">Advanced</Typography>
 				<FormControlLabel
 					label="Show Lobby Code"
 					checked={!settings.hideCode}
@@ -632,6 +722,16 @@ const Settings: React.FC<SettingsProps> = function ({
 						});
 					}}
 					control={<Checkbox />}
+				/>
+				<URLInput
+					initialURL={settings.serverURL}
+					onValidURL={(url: string) => {
+						setSettings({
+							type: 'setOne',
+							action: ['serverURL', url],
+						});
+					}}
+					className={classes.urlDialog}
 				/>
 				<Alert
 					className={classes.alert}
