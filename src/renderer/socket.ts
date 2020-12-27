@@ -38,6 +38,13 @@ export default class Socket extends EventEmitter {
     }
 
     onClose(evt: CloseEvent) {
+        if (evt.code === 4000) {
+            this.emit('error', {
+                message: evt.reason
+            });
+            return;
+        }
+
         this.emit('disconnect', evt);
 
         setTimeout(() => {
